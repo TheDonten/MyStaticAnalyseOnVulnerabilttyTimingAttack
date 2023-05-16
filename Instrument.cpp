@@ -54,11 +54,12 @@ using namespace llvm;
 
 
 static std::set<std::string> Abstract_all_object, Temp_values, AllocValues;
-static std::set<std::string> Func_name = { "mgm_128_ctx_create_init","main","mgm_128_encrypt","mgm_128_generate_next_mac_block","multiplication_gf_128",
-"mgm_128_prepare","mgm_128_deploy_key","mgm_128_encrypt_block","func_F","func_X","func_LS"};
+static std::set<std::string> Func_name = {};
 static std::set<std::string> Out;
 
 static std::string out_txt = "";
+static std::string func_txt = "";
+
 
 class Node_inst {
 
@@ -221,44 +222,7 @@ public:
 static std::set<Node_inst*> Secret_variable;
 static std::set<Node_inst*> Find_leaking;
 
-class Graph {
-
-    std::vector<std::vector<int>> matrix_graph;
-
-public:
-
-    void add_v() {
-        if (matrix_graph.size() == 0) {
-            this->matrix_graph.resize(1);
-            this->matrix_graph[0].push_back(0);
-            return;
-        }
-        std::vector<int> prom_vec;
-        for (int i = 0; i < matrix_graph.size(); i++) {
-
-            matrix_graph[i].push_back(0);
-            prom_vec.push_back(0);
-
-        }
-        prom_vec.push_back(0);
-        matrix_graph.push_back(prom_vec);
-        return;
-    }
-
-    void add_reb(int a, int b) {
-        this->matrix_graph[a][b] = 1;
-    }
-
-    void print() {
-        for (int i = 0; i < matrix_graph.size(); i++) {
-            for (int j = 0; j < matrix_graph[i].size(); j++) {
-                std::cout << matrix_graph[i][j] << " ";
-            }
-            std::cout << std::endl;
-        }
-    }
-
-};
+Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*>* nodes, std::vector<Value*> values, std::pair<Function*, int> f_parent, std::string path);
 
 std::pair<bool, StructType*> isStructType(Type* type) {
     if (PointerType* pointerType = dyn_cast<PointerType>(type)) {
@@ -389,48 +353,6 @@ void doDFS(std::vector<Node_inst*>* Graph, Node_inst* ver) {
     dfs(Graph, ver->get_index(), &visited);
 
 }
-/*void parse_structure(Graph* matrix_graph, std::vector<Node_inst*>* nodes, StructType* strct, int index) {
-    
-    
-    //std::cout << *nodes[index].get_object_name() << std::endl;
-    //std::cout << nodes->at(index)->get_object_name() << std::endl;
-    for (auto i = 0; i < strct->getNumElements(); i++) {
-        Abstract_all_object.insert(nodes->at(index)->get_object_name() + "." + std::to_string(index));
-        int new_node = nodes->size();
-
-        if (strct->getElementType(i)->isStructTy()) {
-            std::cout << "This, Field" << std::endl;
-            StructType* check = cast<StructType>(strct->getElementType(i));
-            nodes->at(index)->set_edge({ new_node, "[" + std::to_string(i) + "]" });
-            nodes->push_back(new Node_inst("Fields", nodes->at(index)->get_object_name() + "." + std::to_string(i), {}, new_node, NULL, "StructType"));
-            matrix_graph->add_v();
-            matrix_graph->add_reb(index, new_node);
-            parse_structure(matrix_graph, nodes, check, new_node);
-        }
-        else if (strct->getElementType(i)->isPointerTy()) {
-            std::cout << "Is pointer" << std::endl;
-            std::pair<bool, StructType*> flag_next = isStructType(strct->getElementType(i));
-            if (flag_next.first) {
-                std::cout << "Is pointer to struct" << std::endl;
-                //StructType* check = cast<StructType>(strct->getElementType(i));
-                nodes->at(index)->set_edge({ new_node, "[" + std::to_string(i) + "]" });
-                nodes->push_back(new Node_inst("Fields", nodes->at(index)->get_object_name() + "." + std::to_string(i), {}, new_node, NULL, "StructType"));
-                matrix_graph->add_v();
-                matrix_graph->add_reb(index, new_node);
-                parse_structure(matrix_graph, nodes, flag_next.second, new_node);
-            }
-        }
-        else {
-            nodes->at(index)->set_edge({new_node, "[" + std::to_string(i) + "]"});
-            nodes->push_back(new Node_inst("Fields", nodes->at(index)->get_object_name() + "." + std::to_string(i), {}, new_node, NULL, "VariableType"));
-            matrix_graph->add_v();
-            matrix_graph->add_reb(index, new_node);
-
-        }
-    }
-}*/
-
-
 
 int CreateNodes(std::vector<Node_inst*>* nodes, std::string Type_inst, std::string Type_create, Value* val, std::string name_out) {
     std::string name;
@@ -502,32 +424,12 @@ void add_under_nodes( Node_inst* first, Node_inst* second, std::vector<Node_inst
     }
 }
 
-/*void check_parent(Node_inst* prom1, Node_inst* prom2, std::vector<Node_inst*>* nodes) {
-    if (prom1->Parent != "" && prom2->Parent != "") {
-        prom2->Graph += '\"' + prom2->Parent + '\"' + " -> " + '\"' + prom1->Parent + '\"' + ";\n";
-        nodes->at(prom2->ind_Parent)->Graph += prom2->Graph;
-    }
-    else if (prom1->Parent == "" && prom1->get_type_instruction() == "AllocaInst" && prom2->Parent != "") {
-        prom2->Graph += '\"' + prom2->Parent + '\"' + " -> " + '\"' + prom1->get_object_name() + '\"' + ";\n";
-        nodes->at(prom2->ind_Parent)->Graph += prom2->Graph;
-    }
-    else if (prom1->Parent != "" && prom2->Parent == "" && prom2->get_type_instruction() == "AllocaInst") {
-        prom2->Graph += '\"' + prom2->get_object_name() + '\"' + " -> " + '\"' + prom1->Parent + '\"' + ";\n";
-    }
-    else if (prom1->Parent == "" && prom2->Parent == "" && prom1->get_type_instruction() == "AllocaInst" && prom2->get_type_instruction() == "AllocaInst") {
-        prom2->Graph += '\"' + prom2->get_object_name() + '\"' + " -> " + '\"' + prom1->get_object_name() + '\"' + ";\n";
-    }
-}*/
-
-
-
 void AllocaInstParser(Value* val, std::vector<Node_inst*>* nodes) {
     auto n1 = std::find_if(nodes->begin(), nodes->end(), [=](Node_inst* e) {return e->get_value() == val; });
     if (n1 != nodes->end())
         return;
     int parent_index = CreateNodes(nodes, "AllocaInst","Value",val,"");
     int son_index = CreateNodes(nodes, "AllocaInst", "Object", NULL,"");
-    //nodes->at(son_index)->Parent.first = nodes->at(parent_index)->get_object_name();
     nodes->at(son_index)->Parent.insert(nodes->at(parent_index)->get_object_name());
 
     nodes->at(parent_index)->Graph = "";
@@ -592,31 +494,11 @@ void StoreInstParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::map
     if (n1 != nodes->end() && n2 != nodes->end()) {
         Node_inst* prom1 = *n1; //q /array
         Node_inst* prom2 = *n2; //p /i
-        
-        /*if (prom1->get_object_name() == "%186") {
-            Value* check = inst.getOperand(1);
-            auto n3 = std::find_if(nodes->begin(), nodes->end(), [=](Node_inst* e) {return e->get_value() == check; });
-            Node_inst* deb = *n3;
-            std::cout << deb->get_index() << " " << deb->get_object_name() << std::endl;
-            std::cout << std::endl;
-
-        }*/
-        
-        /*if (prom1->get_type_instruction() == "AllocaInst") {
-            prom2->Parent.insert(prom1->get_object_name());
-        }
-        else if (prom2->Parent.size() > 0) {
-            prom2->Parent.merge(prom1->Parent);
-        }*/
 
          if (prom1->is_secret()) {
             prom2->set_secret(true);
      
         }
-          
-      
-      
-
         if (prom1->malloc)
             prom2->malloc = true;
 
@@ -624,8 +506,6 @@ void StoreInstParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::map
             if (prom1->Parent.size() > 0)
                 prom2->Parent.merge(prom1->Parent);
             prom2->add_edges_set(prom1,nodes);
-           
-            //nodes->at(prom2->ind_Parent)->Graph = prom2->Graph;
             return;
         }
 
@@ -664,37 +544,6 @@ std::string find_name(std::string in_find, std::string a, std::string Type) {
     return name;
 }
 
-/*bool have_secret_index(std::vector<Node_inst*>* nodes, Node_inst* val) {
-    if (val->is_secret())
-        return true;
-    for (auto iter = val->get_edges()->begin(); iter != val->get_edges()->end(); iter++) {
-        if (have_secret_index(nodes, nodes->at(iter->first)))
-            return true;
-    }
-    return false;
-}*/
-
-bool equal_obj(Node_inst* obj1, Node_inst* obj2_finding, std::vector<Node_inst*>* nodes) {
-
-    if (obj1 == obj2_finding)
-        return true;
-    for (auto iter = obj1->get_edges()->begin(); iter != obj1->get_edges()->end(); iter++) {
-        if (equal_obj(nodes->at(iter->first), obj2_finding, nodes))
-            return true;
-    }
-    return false;
-}
-
-/*bool find_origin_secret_variable(Node_inst* obj, std::vector<Node_inst*>* nodes) {
-    for (int i = 0; i < Secret_variable.size(); i++) {
-        if (equal_obj(Secret_variable[i], obj, nodes)) {
-            std::cout << Secret_variable[i]->get_object_name() << std::endl;
-            return true;
-        }
-    }
-    return false;
-}*/
-
 void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::string This_Func, std::pair<Function*,int> f_parent, std::string path) {
     Value* pointer_start = inst.getOperand(0);
     Value* val = cast<Value>(&inst);
@@ -708,7 +557,6 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
             prom1->Parent.insert(prom->get_object_name());
         else if (prom->Parent.size() > 0)
             prom1->Parent.merge(prom->Parent);
-        //prom1->Parent = prom->get_object_name();
         Node_inst* leak = nullptr;
 
         std::string index = "";
@@ -717,7 +565,6 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
         for (int i = 1; i < inst.getNumOperands(); i++) {
             if (ConstantInt* k = dyn_cast<ConstantInt>(inst.getOperand(i))) {
                 a += k->getZExtValue();
-                //str += "[" + std::to_string(a) + "]";
             }
             else {
                 index = "[*]";
@@ -725,7 +572,6 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
                 auto n1 = std::find_if(nodes->begin(), nodes->end(), [=](Node_inst* e) {return e->get_value() == val; });
                 if (n1 != nodes->end()) {
                     leak = *n1;
-                    //std::cout << leak->get_object_name() << std::endl;
                 }
                 break;
             }
@@ -752,10 +598,7 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
                 }
 
                 object->set_edge({ temp_node_size, index }); //добавляем для объекта ребро для нового обхекта
-                //matrix_graph->add_reb(object->get_index(), temp_node_size); //тоже самое для матрицы смежности
-
                 prom1->set_edge({ temp_node_size , index }); // для ново регистра создаем ребро между новым объектом
-                //matrix_graph->add_reb(prom1->get_index(), temp_node_size);//тоже самое для матрицы смежности
             }
             else {
                 prom1->set_edge(object->find_edge(index));
@@ -775,14 +618,9 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
                     prom1->set_secret(true);
                 }
                 object->set_edge({ temp_node_size, index }); //добавляем для объекта ребро для нового обхекта
-                //matrix_graph->add_reb(object->get_index(), temp_node_size); //тоже самое для матрицы смежности
-
                 prom1->set_edge({ temp_node_size , index }); // для ново регистра создаем ребро между новым объектом
-                //matrix_graph->add_reb(prom1->get_index(), temp_node_size);//тоже самое для матрицы смежности
             }
             else {
-                //std::cout << nodes->at(object->find_edge(index).first)->get_object_name() << std::endl;
-                //interface_with_data(*nodes);
                 if (nodes->at(object->find_edge(index).first)->is_secret() ) {
                    
                     prom1->secret_index = true;
@@ -825,10 +663,6 @@ void GetElementParser(Instruction& inst, std::vector<Node_inst*>* nodes, std::st
                 std::string out = "Leakeage memory from func " + This_Func + " Line: "+ std::to_string(debugInfo->getLine()) + " Called func from " + f_parent.first->getName().str() + " " + "Line: " + std::to_string(f_parent.second)  + "\n";
                 Out.insert(out);
                 Find_leaking.insert(leak);
-                //Secret_variable.push_back(leak);
-                //std::cout << "Leakeage memory from func " << This_Func << " Called func from "<<Parent_Func << "  |" << leak->get_object_name() << "|" << debugInfo->getLine() << std::endl;
-                //errs() << inst << "\n";
-      
             }
         }
 
@@ -959,10 +793,6 @@ void CallInst_operator(Instruction& inst, std::vector<Node_inst*>* nodes, std::m
             if (prom2->is_secret()) {
                 prom1->set_secret(true);
             }
-
-
-
-            //prom1->add_edges(prom2,"", & nodes_temp);
             for (auto iter = prom1->get_edges()->begin(); iter != prom1->get_edges()->end(); iter++) {
                 if (prom2->is_secret())
                     nodes->at(iter->first)->set_secret(true);
@@ -1024,13 +854,6 @@ Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*> *nodes,std::vec
         i++;
     }
 
-    //НА БУДУЩЕЕ,если что то пойдет не так!!! Если лоад будет бесить со своими кривыми добавлениям вершин, то сделать проверку на структуру и массив.
-    //То есть, если структура/массив то присваивать не q->po and po->o, then p->o, а просто q->o, then p->o
-
-    //Graph matrix_graph;
-    //add_argument_f(f, set_Variable, matrx_graph, marks_args, index_marks_variable);
-
-
     for (auto iter2 = f->getBasicBlockList().begin(); iter2 != f->getBasicBlockList().end(); iter2++) {
         BasicBlock& bb = *iter2;
         std::vector<Node_inst*> nodes_temp = *nodes;
@@ -1087,22 +910,15 @@ Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*> *nodes,std::vec
                         prom1->Parent.insert(prom2->get_object_name());
                     else if (prom2->Parent.size() > 0)
                         prom1->Parent.merge(prom2->Parent);
-    
-                    //if(val->hasName())
-                        //prom1 = new Node_inst("Cast", val->getName().str(), {}, nodes_temp.size(), val, prom2->get_type(), false);
                    
                     Temp_values.insert(std::to_string(Temp_values.size()));
                     nodes_temp.push_back(prom1);
-                    //matrix_graph->add_v();
 
                     if (prom2->malloc)
                         prom1->malloc = true;
 
                     prom1->add_edges_set(prom2,&nodes_temp);
                     prom1->bitcast = true;
-                    //add_under_nodes(matrix_graph, prom1, prom2, &nodes_temp);
-
-                    
                 }
                 else {
                     continue;
@@ -1131,8 +947,6 @@ Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*> *nodes,std::vec
                 CallInst_operator(inst, &nodes_temp, func_arg, path, f);
             }
             else if (BranchInst* k = dyn_cast<BranchInst>(&inst)) {
-                    //interface_with_data(nodes_temp, matrix_graph);
-                    //std::cout << nodes_temp[0]->get_index() << std::endl;
                     if (nodes->size() == 0) {
                         *nodes = nodes_temp;
                         continue;
@@ -1157,12 +971,10 @@ Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*> *nodes,std::vec
             else {
                 --iter3;
             }
-            //interface_with_data(nodes_temp);
         }
         *nodes = nodes_temp;
 
     }
-    //std::cout << nodes->at(0)->get_index() << std::endl;
     if (f->getName().str() == "main") {
         if (out_txt != "") {
             std::ofstream fout(out_txt);
@@ -1175,35 +987,7 @@ Node_inst* get_analyse_func(Function* f, std::vector<Node_inst*> *nodes,std::vec
         interface_with_data(*nodes);
         
     }
-    //matrix_graph.print();
     return nullptr;
-}
-
-std::string find_original_var(Instruction* inst) {
-    if (inst->hasName())
-        return inst->getName().str();
-    if (isa<LoadInst>(inst))
-        return find_original_var(cast<Instruction>(inst->getOperand(0)));
-    else if (isa<GetElementPtrInst>(inst))
-        return find_original_var(cast<Instruction>(inst->getOperand(0)));
-    else if (isa<BinaryOperator>(inst)) {
-        std::cout << "Lol" << std::endl;
-    }
-    else if (isa<AllocaInst>(inst)) {
-        return inst->getName().str();
-    }
-   
-
-
-        return "";
-}
-
-void find_repeat(std::set<std::string> *out, std::string s) {
-    auto find = out->find(s);
-    if (find != out->end()) {
-        out->erase(find);
-    }
-    return;
 }
 
 int main(int argc, char* argv[])
@@ -1239,8 +1023,29 @@ int main(int argc, char* argv[])
                 std::cout << "Create out.txt: Success" << std::endl;
                 continue;
             }
+            else if (std::string(argv[i]) == "-func") {
+                func_txt = argv[i + 1];
+                i++;
+                std::cout << "Take func.txt: Success" << std::endl;
+                continue;
+            }
             std::cout << argv[i] << std::endl;
         }
+
+        std::string s;
+        std::ifstream F(func_txt);
+        //F.open("func.txt",'r');
+        if (F) {
+            while (getline(F, s)) {
+                std::cout << s << std::endl;
+                Func_name.insert(s);
+            }
+        }
+        else {
+            return -1;
+        }
+        F.close();
+      
 
         std::unique_ptr< Module > Mod = parseIRFile(filename, Err, context);
 
@@ -1250,8 +1055,6 @@ int main(int argc, char* argv[])
 
         Module::GlobalListType& global_list = m->getGlobalList();
 
-
-        std::string out_graph;
 
         Function* f = m->getFunction(get_name_func);
         std::vector<Node_inst*> nodes;
@@ -1268,5 +1071,4 @@ int main(int argc, char* argv[])
         }
         get_analyse_func(f, &nodes, val, { f,-1 }, path);
         std::queue<Value*> que_val;
-        //Find_Path(m->getFunction("F"), nodes);
 }
